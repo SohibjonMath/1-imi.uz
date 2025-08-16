@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bizning Maktab — Zamonaviy Sahifa</title>
+  <meta name="description" content="Zamonaviy, tezkor va moslashuvchan maktab veb-sahifasi." />
+  <link rel="preconnect" href="https://cdn.tailwindcss.com" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eef6ff', 100: '#d9ecff', 200: '#b5d8ff', 300: '#89c0ff',
+              400: '#5aa5ff', 500: '#2a8aff', 600: '#156ff1', 700: '#0f59c4',
+              800: '#0d4697', 900: '#0c3b7c'
+            }
+          },
+          boxShadow: {
+            glow: '0 10px 40px rgba(42, 138, 255, .25)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Subtle gradient noise background */
+    .bg-noise { background-image: radial-gradient( rgba(255,255,255,.6) 1px, transparent 1px ), linear-gradient(120deg,#f0f7ff, #f7fbff); background-size: 3px 3px, 100% 100%; }
+    /* Simple fade/slide animations */
+    .reveal { opacity: 0; transform: translateY(16px); transition: all .7s ease; }
+    .reveal.show { opacity: 1; transform: translateY(0); }
+    /* Horizontal scroll cards */
+    .snap-x { scroll-snap-type: x mandatory; }
+    .snap-start { scroll-snap-align: start; }
+  </style>
+</head>
+<body class="font-display text-gray-800 bg-noise">
+  <!-- Header / Navbar -->
+  <header class="sticky top-0 z-50 backdrop-blur bg-white/70 border-b border-white/40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <a href="#" class="flex items-center gap-2">
+          <span class="text-2xl">🏫</span>
+          <span class="font-bold text-lg">Bizning Maktab</span>
+        </a>
+      </div>
+    </div>
+    </div>
+  </header>
+<style>
+    /* Asosiy AssistiveTouch tugmasi */
+    .assistive-touch {
+    position: fixed;
+    right: 25px;
+    bottom: 25px;
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(
+      135deg,
+      rgba(106, 17, 203, 0.6),
+      rgba(37, 117, 252, 0.6)
+    );
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 28px;
+    cursor: pointer;
+    z-index: 1000;
+    box-shadow: 0 6px 20px rgba(106, 17, 203, 0.2);
+    transition: all 0.3s ease;
+    border: none;
+    outline: none;
+    user-select: none;
+}
+    .assistive-touch:hover {
+        transform: scale(1.1);
+        box-shadow: 0 8px 25px rgba(106, 17, 203, 0.4);
+    }
+    
+    .assistive-touch:active {
+        transform: scale(0.95);
+    }
+    
+    /* Matematika menyusi */
+    .math-assistive-menu {
+        position: fixed;
+        right: 100px;
+        bottom: 25px;
+        width: 280px;
+        background: white;
+        border-radius: 16px;
+        padding: 12px 0;
+        display: none;
+        flex-direction: column;
+        z-index: 1000;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        animation: fadeIn 0.25s ease-out;
+        border-top: 4px solid #6a11cb;
+        overflow: hidden;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    .math-menu-item {
+        padding: 14px 24px;
+        color: #333;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        transition: all 0.2s;
+        font-family: 'Segoe UI', sans-serif;
+        text-decoration: none;
+        font-size: 15px;
+    }
+    
+    .math-menu-item:hover {
+        background: linear-gradient(to right, #f6f7ff, #fff);
+        color: #6a11cb;
+        padding-left: 28px;
+    }
+    
+    .math-menu-item i {
+        margin-right: 16px;
+        font-size: 20px;
+        color: #6a11cb;
+        width: 24px;
+        text-align: center;
+    }
+    
+    .math-menu-header {
+        padding: 14px 24px;
+        font-weight: 600;
+        color: #6a11cb;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+        font-size: 16px;
+        background: #f9f9ff;
+    }
+    
+    .math-menu-header i {
+        margin-right: 12px;
+        font-size: 22px;
+    }
+    
+    .new-badge {
+        background: linear-gradient(to right, #ff8a00, #ff0058);
+        color: white;
+        font-size: 16px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        margin-left: 18px;
+        font-weight: bold;
+        animation: pulse 1.5s infinite;
+         width: 65%;
+         text-align: center;
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.05); opacity: 1; }
+        100% { transform: scale(1); opacity: 0.9; }
+    }
+</style>
+
+<!-- Font Awesome CDN for modern icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<!-- AssistiveTouch tugmasi -->
+<button class="assistive-touch" id="assistiveBtn" aria-label="Math Assistant">
+    <i class="fas fa-bars"></i>
+</button>
+
+<!-- Matematika menyusi -->
+<div class="math-assistive-menu" id="mathMenu">
+    <div class="math-menu-header">
+        <i class="fas fa-bars"></i>
+        MENYULAR
+    </div>
+    <a href="index.html" class="math-menu-item">
+        <i class="fas fa-home"></i>
+        Bosh menyu
+    </a>
+    <a href="info.php" class="math-menu-item">
+        <i class="fas fa-school"></i>
+        Mening maktabim
+    </a>
+    <a href="leader.php" class="math-menu-item">
+        <i class="fas fa-user-tie"></i>
+        Rahbariyat
+    </a>
+    <a href="teachers.php" class="math-menu-item">
+        <i class="fas fa-chalkboard-teacher"></i>
+        O'qituvchilar
+    </a>
+    <a href="pupils.php" class="math-menu-item">
+        <i class="fas fa-users"></i>
+       O'quvchilar
+    </a>
+    <a href="pupils.php" class="new-badge">
+        <i class="fas fa-calculator"></i>
+       Matematika
+    </a>
+    <a href="darsjadvali.php" class="math-menu-item">
+        <i class="fas fa-calendar-alt"></i>
+       Dars jadvali
+    </a>
+    <a href="yutuqlar.php" class="math-menu-item">
+        <i class="fas fa-star"></i>
+       Yutuqlar
+    </a>
+     <a href="/news/news.php" class="math-menu-item">
+        <i class="fas fa-newspaper"></i>
+       Yangiliklar
+    </a>
+    <a href="gallery.php" class="math-menu-item">
+        <i class="fas fa-images"></i>
+      Galereya
+    </a>
+    <a href="#contact#" class="math-menu-item">
+        <i class="fas fa-envelope"></i>
+      Aloqa
+    </a>
+    <div class="math-menu-item" style="border-top: 1px solid #eee; color: #888;">
+        <i class="fas fa-times-circle"></i>
+        Yopish
+    </div>
+</div>
+
+<script>
+    const assistiveBtn = document.getElementById('assistiveBtn');
+    const mathMenu = document.getElementById('mathMenu');
+    
+    // Tugma bosilganda menyuni ochish/yopish
+    assistiveBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        mathMenu.style.display = mathMenu.style.display === 'flex' ? 'none' : 'flex';
+    });
+    
+    // Ekranda boshqa joyga bosilganda menyuni yopish
+    document.addEventListener('click', function() {
+        mathMenu.style.display = 'none';
+    });
+    
+    // Menyuni bosilganda yopilishining oldini olish
+    mathMenu.addEventListener('click', function(e) {
+        e.stopPropagation();
+        
+        // "Yopish" tugmasi bosilganda
+        if (e.target.closest('.math-menu-item') && (e.target.textContent.includes('Yopish') || e.target.closest('i.fa-times-circle'))) {
+            mathMenu.style.display = 'none';
+        }
+    });
+</script>
+  <!-- Hero -->
+  <section class="relative overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28 grid lg:grid-cols-2 gap-10 items-center">
+      <div class="reveal">
+        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm bg-brand-50 text-brand-700 ring-1 ring-brand-200">Ilm. Ijod. Kelajak.</span>
+        <h1 class="mt-4 text-4xl sm:text-5xl font-extrabold leading-tight">
+          Zamonaviy ta’lim bilan <span class="text-brand-600">katta natijalarga</span> erishing
+        </h1>
+        <p class="mt-4 text-gray-600 text-lg">Maktabimizda o‘quvchilar mustaqil fikrlash, texnologiya va ilmga oshno bo‘ladilar. To‘laqonli darslar, to‘garaklar va musobaqalar sizni kutmoqda.</p>
+        <div class="mt-6 flex items-center gap-3">
+          <a href="#contact" class="inline-flex items-center justify-center px-5 py-3 rounded-2xl bg-brand-600 text-white font-semibold shadow-glow hover:bg-brand-700">Bog‘lanish</a>
+          <a href="#features" class="inline-flex items-center justify-center px-5 py-3 rounded-2xl border border-gray-300 font-semibold hover:bg-gray-50">Ko‘proq bilish</a>
+        </div>
+      </div>
+      <div class="relative reveal">
+        <div class="aspect-[4/3] rounded-3xl bg-gradient-to-br from-brand-100 to-white shadow-xl overflow-hidden">
+          <img src="https://images.unsplash.com/photo-1529078155058-5d716f45d604?q=80&w=1400&auto=format&fit=crop" alt="School" class="w-full h-full object-cover opacity-90" />
+        </div>
+        <div class="absolute -bottom-6 -left-6 bg-white/80 backdrop-blur shadow-xl rounded-2xl p-4 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-100 grid place-items-center">📚</div>
+          <div>
+            <div class="font-semibold">STEAM to‘garaklari</div>
+            <div class="text-sm text-gray-600">Robototexnika, Matematika, IT</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Decorative gradient blobs -->
+    <div class="pointer-events-none absolute inset-0 -z-10">
+      <div class="absolute -top-20 -right-20 w-80 h-80 bg-brand-300/20 blur-3xl rounded-full"></div>
+      <div class="absolute -bottom-24 -left-24 w-80 h-80 bg-brand-500/10 blur-3xl rounded-full"></div>
+    </div>
+  </section>
+
+  <!-- Features / Advantages -->
+  <section id="features" class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center max-w-2xl mx-auto reveal">
+        <h2 class="text-3xl sm:text-4xl font-extrabold">Nega aynan biz?</h2>
+        <p class="mt-3 text-gray-600">Zamonaviy uslub, tajribali pedagoglar va xavfsiz muhit — barchasi bir joyda.</p>
+      </div>
+      <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="p-6 rounded-2xl bg-white shadow hover:shadow-lg transition reveal">
+          <div class="w-12 h-12 rounded-xl bg-brand-100 grid place-items-center text-xl">🎯</div>
+          <h3 class="mt-4 font-semibold text-lg">Individual yondashuv</h3>
+          <p class="mt-1 text-gray-600 text-sm">Har bir o‘quvchi uchun alohida metodika.</p>
+        </div>
+        <div class="p-6 rounded-2xl bg-white shadow hover:shadow-lg transition reveal">
+          <div class="w-12 h-12 rounded-xl bg-brand-100 grid place-items-center text-xl">🧪</div>
+          <h3 class="mt-4 font-semibold text-lg">STEAM laboratoriyalari</h3>
+          <p class="mt-1 text-gray-600 text-sm">Amaliy tajriba va loyihalar.</p>
+        </div>
+        <div class="p-6 rounded-2xl bg-white shadow hover:shadow-lg transition reveal">
+          <div class="w-12 h-12 rounded-xl bg-brand-100 grid place-items-center text-xl">🏆</div>
+          <h3 class="mt-4 font-semibold text-lg">Yutuqlar</h3>
+          <p class="mt-1 text-gray-600 text-sm">Olimpiada va tanlovlarda yuqori natijalar.</p>
+        </div>
+        <div class="p-6 rounded-2xl bg-white shadow hover:shadow-lg transition reveal">
+          <div class="w-12 h-12 rounded-xl bg-brand-100 grid place-items-center text-xl">🔒</div>
+          <h3 class="mt-4 font-semibold text-lg">Xavfsiz muhit</h3>
+          <p class="mt-1 text-gray-600 text-sm">Do‘stona, qulay va xavfsiz makon.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats (animated counters) -->
+  <section id="stats" class="py-16 bg-gradient-to-br from-white to-brand-50/60">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="p-6 bg-white rounded-2xl shadow border border-brand-100 text-center reveal">
+          <div class="text-4xl font-extrabold text-brand-700" data-counter="850">0</div>
+          <div class="mt-1 text-gray-600">O‘quvchi</div>
+        </div>
+        <div class="p-6 bg-white rounded-2xl shadow border border-brand-100 text-center reveal">
+          <div class="text-4xl font-extrabold text-brand-700" data-counter="68">0</div>
+          <div class="mt-1 text-gray-600">O‘qituvchi</div>
+        </div>
+        <div class="p-6 bg-white rounded-2xl shadow border border-brand-100 text-center reveal">
+          <div class="text-4xl font-extrabold text-brand-700" data-counter="24">0</div>
+          <div class="mt-1 text-gray-600">To‘garak</div>
+        </div>
+        <div class="p-6 bg-white rounded-2xl shadow border border-brand-100 text-center reveal">
+          <div class="text-4xl font-extrabold text-brand-700" data-counter="98">0</div>
+          <div class="mt-1 text-gray-600">Bitiruvchilar ish bilan (%)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Horizontal news/events cards -->
+  <section class="py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-end justify-between gap-4">
+        <h2 class="text-3xl font-extrabold">Yangiliklar & Tadbirlar</h2>
+        <div class="text-sm text-gray-500">Sichqoncha bilan suring →</div>
+      </div>
+      <div class="mt-6 overflow-x-auto snap-x flex gap-4 pb-2">
+        <!-- Card -->
+        <article class="min-w-[280px] max-w-xs snap-start bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden reveal">
+          <img src="https://images.unsplash.com/photo-1588072432836-e10032774350?q=80&w=1200&auto=format&fit=crop" alt="IT Week" class="h-40 w-full object-cover"/>
+          <div class="p-4">
+            <div class="text-xs uppercase tracking-wide text-brand-700">Sentyabr</div>
+            <h3 class="mt-1 font-semibold">IT Week: dasturlash haftaligi</h3>
+            <p class="text-sm text-gray-600 mt-1">Workshop, hackathon va mentorlardan master-klasslar.</p>
+          </div>
+        </article>
+        <article class="min-w-[280px] max-w-xs snap-start bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden reveal">
+          <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1200&auto=format&fit=crop" alt="Sport" class="h-40 w-full object-cover"/>
+          <div class="p-4">
+            <div class="text-xs uppercase tracking-wide text-brand-700">Oktyabr</div>
+            <h3 class="mt-1 font-semibold">Maktab spartakiadasi</h3>
+            <p class="text-sm text-gray-600 mt-1">Futbol, yengil atletika va shaxmat musobaqalari.</p>
+          </div>
+        </article>
+        <article class="min-w-[280px] max-w-xs snap-start bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden reveal">
+          <img src="https://images.unsplash.com/photo-1461963046557-49902c3ae6f7?q=80&w=1200&auto=format&fit=crop" alt="Science" class="h-40 w-full object-cover"/>
+          <div class="p-4">
+            <div class="text-xs uppercase tracking-wide text-brand-700">Noyabr</div>
+            <h3 class="mt-1 font-semibold">Fan festivali</h3>
+            <p class="text-sm text-gray-600 mt-1">Laboratoriya eksperimentlari va ko‘rgazmalar.</p>
+          </div>
+        </article>
+        <article class="min-w-[280px] max-w-xs snap-start bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden reveal">
+          <img src="https://images.unsplash.com/photo-1600880292089-90e6a0a96377?q=80&w=1200&auto=format&fit=crop" alt="Parents" class="h-40 w-full object-cover"/>
+          <div class="p-4">
+            <div class="text-xs uppercase tracking-wide text-brand-700">Dekabr</div>
+            <h3 class="mt-1 font-semibold">Ota-onalar kuni</h3>
+            <p class="text-sm text-gray-600 mt-1">Ochiq darslar va uchrashuvlar.</p>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Teachers -->
+  <section id="teachers" class="py-16 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center max-w-2xl mx-auto reveal">
+        <h2 class="text-3xl sm:text-4xl font-extrabold">O‘qituvchilarimiz</h2>
+        <p class="mt-3 text-gray-600">Tajribali, mehribon va fidoyi ustozlar.</p>
+      </div>
+      <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Card 1 -->
+        <div class="group p-6 bg-gradient-to-b from-white to-brand-50/40 rounded-2xl border border-gray-100 shadow hover:shadow-lg transition reveal">
+          <img class="w-28 h-28 rounded-full object-cover mx-auto" src="https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?q=80&w=600&auto=format&fit=crop" alt="Math" />
+          <h3 class="mt-4 font-semibold text-lg text-center">S. Sohibjon</h3>
+          <p class="text-center text-gray-600">Matematika o‘qituvchisi</p>
+          <div class="mt-3 text-center text-sm text-brand-700 opacity-0 group-hover:opacity-100 transition">Olimpiada murabbiyi</div>
+        </div>
+        <!-- Card 2 -->
+        <div class="group p-6 bg-gradient-to-b from-white to-brand-50/40 rounded-2xl border border-gray-100 shadow hover:shadow-lg transition reveal">
+          <img class="w-28 h-28 rounded-full object-cover mx-auto" src="https://images.unsplash.com/photo-1527980965255-d3b416303d12?q=80&w=600&auto=format&fit=crop" alt="English" />
+          <h3 class="mt-4 font-semibold text-lg text-center">K. Dilnoza</h3>
+          <p class="text-center text-gray-600">Ingliz tili o‘qituvchisi</p>
+          <div class="mt-3 text-center text-sm text-brand-700 opacity-0 group-hover:opacity-100 transition">IELTS mentori</div>
+        </div>
+        <!-- Card 3 -->
+        <div class="group p-6 bg-gradient-to-b from-white to-brand-50/40 rounded-2xl border border-gray-100 shadow hover:shadow-lg transition reveal">
+          <img class="w-28 h-28 rounded-full object-cover mx-auto" src="https://images.unsplash.com/photo-1596495578065-8a35a6a5c1a9?q=80&w=600&auto=format&fit=crop" alt="Physics" />
+          <h3 class="mt-4 font-semibold text-lg text-center">R. Aziz</h3>
+          <p class="text-center text-gray-600">Fizika o‘qituvchisi</p>
+          <div class="mt-3 text-center text-sm text-brand-700 opacity-0 group-hover:opacity-100 transition">Laboratoriya rahbari</div>
+        </div>
+        <!-- Card 4 -->
+        <div class="group p-6 bg-gradient-to-b from-white to-brand-50/40 rounded-2xl border border-gray-100 shadow hover:shadow-lg transition reveal">
+          <img class="w-28 h-28 rounded-full object-cover mx-auto" src="https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?q=80&w=600&auto=format&fit=crop" alt="History" />
+          <h3 class="mt-4 font-semibold text-lg text-center">T. Nodira</h3>
+          <p class="text-center text-gray-600">Tarix o‘qituvchisi</p>
+          <div class="mt-3 text-center text-sm text-brand-700 opacity-0 group-hover:opacity-100 transition">Interaktiv darslar</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gallery -->
+  <section id="gallery" class="py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center max-w-2xl mx-auto reveal">
+        <h2 class="text-3xl sm:text-4xl font-extrabold">Galereya</h2>
+        <p class="mt-3 text-gray-600">Maktab hayotidan yorqin lahzalar.</p>
+      </div>
+      <div class="mt-10 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <img class="rounded-xl object-cover h-32 w-full reveal" src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=600&auto=format&fit=crop" alt=""/>
+        <img class="rounded-xl object-cover h-32 w-full reveal" src="https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=600&auto=format&fit=crop" alt=""/>
+        <img class="rounded-xl object-cover h-32 w-full reveal" src="https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=600&auto=format&fit=crop" alt=""/>
+        <img class="rounded-xl object-cover h-32 w-full reveal" src="https://images.unsplash.com/photo-1555436169-30af3b3cd1c3?q=80&w=600&auto=format&fit=crop" alt=""/>
+        <img class="rounded-xl object-cover h-32 w-full reveal" src="https://images.unsplash.com/photo-1551817958-20204c6e231c?q=80&w=600&auto=format&fit=crop" alt=""/>
+        <img class="rounded-xl object-cover h-32 w-full reveal" src="https://images.unsplash.com/photo-1511988617509-a57c8a288659?q=80&w=600&auto=format&fit=crop" alt=""/>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="rounded-3xl bg-gradient-to-br from-brand-600 to-brand-700 px-8 py-12 text-white grid lg:grid-cols-2 gap-8 items-center reveal">
+        <div>
+          <h3 class="text-2xl sm:text-3xl font-extrabold">Farzandingiz kelajagi uchun to‘g‘ri tanlov</h3>
+          <p class="mt-2 text-white/90">Qabul bo‘limi haftaning dushanba–shanba kunlari soat 9:00–17:00 gacha ishlaydi.</p>
+        </div>
+        <div class="flex gap-3">
+          <a href="#contact" class="inline-flex items-center justify-center px-5 py-3 rounded-2xl bg-white text-brand-700 font-semibold hover:bg-white/90">Qabulga yozilish</a>
+          <a href="#features" class="inline-flex items-center justify-center px-5 py-3 rounded-2xl ring-1 ring-white/40 font-semibold">Ta’lim dasturlari</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section id="contact" class="py-16 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid lg:grid-cols-2 gap-8 items-center">
+        <div class="reveal">
+          <h2 class="text-3xl font-extrabold">Aloqa</h2>
+          <p class="mt-2 text-gray-600">Savollaringiz bo‘lsa, xabar qoldiring yoki bizga qo‘ng‘iroq qiling.</p>
+          <div class="mt-6 space-y-2 text-gray-700">
+            <div>📍 Manzil: Namangan, IMI maktabi</div>
+            <div>☎️ Telefon: +998 (90) 000-00-00</div>
+            <div>✉️ Email: info@bizningmaktab.uz</div>
+          </div>
+        </div>
+        <form class="bg-gray-50 p-6 rounded-2xl border border-gray-100 shadow reveal" onsubmit="event.preventDefault(); this.reset(); alert('Xabaringiz yuborildi!');">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <input required class="p-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-300" placeholder="Ism" />
+            <input required type="email" class="p-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-300" placeholder="Email" />
+          </div>
+          <textarea required class="mt-4 w-full p-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-300" rows="4" placeholder="Xabaringiz"></textarea>
+          <button class="mt-4 w-full py-3 rounded-2xl bg-brand-600 text-white font-semibold hover:bg-brand-700">Yuborish</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-8 border-t bg-white/70 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p class="text-gray-600">© 2025 Bizning Maktab. Barcha huquqlar himoyalangan.</p>
+      <div class="flex items-center gap-3 text-sm text-gray-600">
+        <a class="hover:text-brand-700" href="#">Maxfiylik</a>
+        <span>•</span>
+        <a class="hover:text-brand-700" href="#">Foydalanish shartlari</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Mobile menu toggle
+    const menuBtn = document.getElementById('menuBtn');
+    const mobileMenu = document.getElementById('mobileMenu');
+    menuBtn?.addEventListener('click', () => mobileMenu.classList.toggle('hidden'));
+
+    // Reveal on scroll
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('show'); io.unobserve(e.target);} });
+    }, {threshold: 0.15});
+    document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+    // Animated counters
+    function animateCounter(el){
+      const target = +el.getAttribute('data-counter');
+      const step = Math.max(1, Math.floor(target/120));
+      let current = 0;
+      const tick = ()=>{
+        current += step; if(current>=target) current = target;
+        el.textContent = current.toLocaleString('uz-UZ');
+        if(current<target) requestAnimationFrame(tick);
+      };
+      tick();
+    }
+    const stats = document.querySelectorAll('[data-counter]');
+    const io2 = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{ if(e.isIntersecting){ animateCounter(e.target); io2.unobserve(e.target);} });
+    }, {threshold: 0.6});
+    stats.forEach(s=>io2.observe(s));
+  </script>
+</body>
+</html>
