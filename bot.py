@@ -1332,6 +1332,37 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception("Global error handler: %s", context.error)
 
 
+# ================== JOB QUEUE SETUP ==================
+def schedule_auto_reposts(app: Application):
+    times = [
+        dtime(7, 0), dtime(9, 0), dtime(11, 0), dtime(13, 0),
+        dtime(15, 0), dtime(17, 0), dtime(19, 0), dtime(21, 0),
+    ]
+
+    job_queue = getattr(app, "job_queue", None)
+    if job_queue is None:
+        logger.warning(
+            "⚠️ JobQueue topilmadi. Auto repost o‘chiq holatda davom etadi. "
+            "requirements.txt ga python-telegram-bot[job-queue] qo‘shing."
+        )
+        return False
+
+    added = 0
+    for t in times:
+        try:
+            job_queue.run_daily(
+                auto_repost,
+                time=t,
+                name=f"auto_repost_{t.hour:02d}_{t.minute:02d}",
+            )
+            added += 1
+        except Exception as e:
+            logger.exception("run_daily xato | %s:%s | %s", t.hour, t.minute, e)
+
+    logger.info("Auto repost schedule qo‘shildi: %s ta vaqt", added)
+    return added > 0
+
+
 # ================== MAIN ==================
 def main():
     if not BOT_TOKEN:
@@ -1370,13 +1401,11 @@ def main():
 
     app.add_error_handler(on_error)
 
-    job_queue = app.job_queue
-    times = [
-        dtime(7, 0), dtime(9, 0), dtime(11, 0), dtime(13, 0),
-        dtime(15, 0), dtime(17, 0), dtime(19, 0), dtime(21, 0),
-    ]
-    for t in times:
-        job_queue.run_daily(auto_repost, time=t, name=f"auto_repost_{t.hour:02d}_{t.minute:02d}")
+    auto_repost_enabled = schedule_auto_reposts(app)
+    if auto_repost_enabled:
+        logger.info("✅ Auto repost yoqildi")
+    else:
+        logger.info("ℹ️ Bot ishlaydi, lekin auto repost hozircha o‘chiq")
 
     logger.info("✅ OrzuMall bot ishga tushdi. CTRL+C bilan to'xtatasiz.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
