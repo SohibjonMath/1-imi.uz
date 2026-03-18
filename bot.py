@@ -6,7 +6,7 @@ import json
 import logging
 import random
 import time as time_mod
-from datetime import datetime, timedelta, time as dtime
+from datetime import datetime, time as dtime
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
@@ -48,7 +48,9 @@ logger = logging.getLogger("OrzuMallBot")
 
 # ================== KEYS ==================
 CHAT_MODE_KEY = "chat_mode"
+SEARCH_MODE_KEY = "search_mode"
 WAITING_CONTACT_KEY = "waiting_contact"
+WAITING_CONTACT_REASON_KEY = "waiting_contact_reason"
 ACTIVE_CHAT_USER_KEY = "active_chat_user_id"
 
 SESSIONS_KEY = "sessions"
@@ -132,6 +134,7 @@ def get_repost_index(app) -> dict:
 def main_keyboard() -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton("🛍 OrzuMall.uz", web_app=WebAppInfo(url=WEB_APP_URL))],
+        [KeyboardButton("🔎 Bizda yo‘q mahsulotni topish")],
         [KeyboardButton("📞 Bog'lanish"), KeyboardButton("ℹ️ Ma'lumot")],
         [KeyboardButton("💬 Chat")],
     ]
@@ -170,7 +173,8 @@ ABOUT_TEXT = (
     "✅ Mahsulotlar\n"
     "🚚 Yetkazib berish\n"
     "💳 Xavfsiz to‘lov\n"
-    "📲 Barchasi bitta bot orqali"
+    "📲 Barchasi bitta bot orqali\n\n"
+    "🔎 <b>Bizda yo‘q mahsulotni topish</b> tugmasi orqali rasm, video yoki nom yuboring — operator sizga taxminiy narx va yetkazib berish muddatini aytadi."
 )
 
 CONTACT_TEXT = (
@@ -184,6 +188,17 @@ WELCOME_TEXT = (
     "Assalomu alaykum! 👋\n"
     "OrzuMall botiga xush kelibsiz.\n\n"
     "Pastdagi tugmalar orqali davom eting 👇"
+)
+
+SEARCH_INTRO_TEXT = (
+    "<b>🔎 Bizda yo‘q mahsulotni topish</b>\n\n"
+    "Mahsulot rasmi, videosi yoki nomini yuboring.\n"
+    "Operator sizga: \n"
+    "• taxminiy umumiy summa\n"
+    "• tezkor yetkazib berish vaqti\n"
+    "• olib kelish imkoniyati\n"
+    "haqida javob beradi.\n\n"
+    "Qancha ko‘p ma'lumot bersangiz, shuncha tez aniq javob olasiz."
 )
 
 
@@ -212,6 +227,13 @@ def session_status_text(session: dict) -> str:
     return "🟡 Holat: navbatda"
 
 
+def session_topic_label(session: dict) -> str:
+    topic = session.get("topic", "chat")
+    if topic == "search_request":
+        return "🔎 So‘rov turi: bizda yo‘q mahsulotni topish"
+    return "💬 So‘rov turi: oddiy chat"
+
+
 def build_operator_ticket_text(session: dict, profile: dict | None = None) -> str:
     user_id = session["user_id"]
     user_name = session.get("user_name", "User")
@@ -223,6 +245,7 @@ def build_operator_ticket_text(session: dict, profile: dict | None = None) -> st
 
     body = [
         "<b>💬 Yangi / faol chat</b>",
+        session_topic_label(session),
         f"👤 {user_name}",
         f"🔗 Username: {uname}",
         f"🆔 USER_ID: <code>{user_id}</code>",
@@ -238,6 +261,9 @@ def build_operator_ticket_text(session: dict, profile: dict | None = None) -> st
             body.append(f"• {m}")
     else:
         body.append("• Hozircha xabar yo‘q")
+
+    if session.get("topic") == "search_request":
+        body += ["", "<b>Operator uchun:</b>", "• Mahsulotni toping", "• Umumiy summani yozing", "• Yetkazib berish vaqtini ayting"]
 
     body.append("")
     body.append("<i>Operator tugma orqali chatni olishi yoki yopishi mumkin</i>")
@@ -301,13 +327,6 @@ def select_random_post(posts: list[dict], cooldown_hours: int = REPOST_COOLDOWN_
 
 
 def select_smart_post(posts: list[dict], cooldown_hours: int = REPOST_COOLDOWN_HOURS) -> dict | None:
-    """
-    Smart tanlash:
-    1) 24 soat ichida repost bo'lmaganlar ichidan oladi
-    2) repost_count eng kam bo'lganlarni ajratadi
-    3) ular ichidan eng eski original postlarga ustunlik beradi
-    4) top 5 ichidan random tanlaydi
-    """
     candidates = eligible_posts(posts, cooldown_hours)
     if not candidates:
         return None
@@ -324,6 +343,30 @@ def mark_reposted(post: dict):
     post["repost_count"] = int(post.get("repost_count", 0)) + 1
     post["last_reposted_at_ts"] = time_mod.time()
     post["last_reposted_at"] = format_dt(datetime.now())
+
+
+def ensure_user_session(sessions: dict, user, profile: dict, topic: str = "chat") -> dict:
+    user_id = user.id
+    session = sessions.get(user_id)
+
+    if not session or session.get("status") == "closed":
+        sessions[user_id] = {
+            "user_id": user_id,
+            "user_name": profile.get("full_name") or user_display_name(user),
+            "username": user.username,
+            "status": "waiting",
+            "operator_id": None,
+            "messages": [],
+            "topic": topic,
+        }
+        return sessions[user_id]
+
+    if topic == "search_request":
+        session["topic"] = "search_request"
+    elif "topic" not in session:
+        session["topic"] = "chat"
+
+    return session
 
 
 # ================== SAFE SEND ==================
@@ -446,7 +489,9 @@ async def notify_operators_media(
 # ================== SUPPORT COMMANDS ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data[CHAT_MODE_KEY] = False
+    context.user_data[SEARCH_MODE_KEY] = False
     context.user_data[WAITING_CONTACT_KEY] = False
+    context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
     await safe_reply(update, WELCOME_TEXT, reply_markup=main_keyboard())
 
 
@@ -462,35 +507,56 @@ async def chat_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profiles = get_profiles(context.application)
     profile = profiles.get(user_id)
 
+    context.user_data[SEARCH_MODE_KEY] = False
+
     if not profile or not profile.get("phone"):
         context.user_data[WAITING_CONTACT_KEY] = True
+        context.user_data[WAITING_CONTACT_REASON_KEY] = "chat"
         await safe_reply(update, "💬 Operator bilan bog‘lanish uchun avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
         return
 
     sessions = get_sessions(context.application)
-    session = sessions.get(user_id)
+    session = ensure_user_session(sessions, update.effective_user, profile, topic="chat")
 
-    if session and session.get("status") in ("waiting", "assigned"):
+    if session.get("status") in ("waiting", "assigned"):
+        session["topic"] = "chat"
         context.user_data[CHAT_MODE_KEY] = True
-        await safe_reply(update, "💬 Sizning chat sessiyangiz allaqachon ochiq.\nSavolingizni yozing, operatorga yuboraman.", reply_markup=main_keyboard())
+        await safe_reply(update, "💬 Chat rejimi yoqildi.\nSavolingizni yozing, operatorga yuboraman.", reply_markup=main_keyboard())
         return
 
-    sessions[user_id] = {
-        "user_id": user_id,
-        "user_name": profile.get("full_name") or user_display_name(update.effective_user),
-        "username": update.effective_user.username,
-        "status": "waiting",
-        "operator_id": None,
-        "messages": [],
-    }
 
-    context.user_data[CHAT_MODE_KEY] = True
-    await safe_reply(update, "💬 Chat rejimi yoqildi.\nSavolingizni yozing — operatorga yuboraman.", reply_markup=main_keyboard())
+async def search_product_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_chat or not update.effective_user:
+        return
+
+    user_id = update.effective_user.id
+    profiles = get_profiles(context.application)
+    profile = profiles.get(user_id)
+
+    context.user_data[CHAT_MODE_KEY] = False
+
+    if not profile or not profile.get("phone"):
+        context.user_data[WAITING_CONTACT_KEY] = True
+        context.user_data[WAITING_CONTACT_REASON_KEY] = "search_request"
+        await safe_reply(update, "🔎 Mahsulotni topish so‘rovi uchun avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
+        return
+
+    sessions = get_sessions(context.application)
+    session = ensure_user_session(sessions, update.effective_user, profile, topic="search_request")
+    session["topic"] = "search_request"
+    if session.get("status") == "closed":
+        session["status"] = "waiting"
+        session["operator_id"] = None
+
+    context.user_data[SEARCH_MODE_KEY] = True
+    await safe_reply(update, SEARCH_INTRO_TEXT, parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
 
 
 async def chat_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data[CHAT_MODE_KEY] = False
+    context.user_data[SEARCH_MODE_KEY] = False
     context.user_data[WAITING_CONTACT_KEY] = False
+    context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
     await safe_reply(update, "✅ Chat rejimi o‘chirildi.", reply_markup=main_keyboard())
 
 
@@ -507,7 +573,8 @@ async def queue_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = ["<b>🟡 Navbatdagi chatlar:</b>"]
     for s in waiting[:20]:
-        lines.append(f"• {s.get('user_name', 'User')} — <code>{s['user_id']}</code>")
+        topic_icon = "🔎" if s.get("topic") == "search_request" else "💬"
+        lines.append(f"• {topic_icon} {s.get('user_name', 'User')} — <code>{s['user_id']}</code>")
 
     await safe_reply(update, "\n".join(lines), parse_mode=ParseMode.HTML)
 
@@ -526,7 +593,8 @@ async def my_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = ["<b>🟢 Sizga biriktirilgan chatlar:</b>"]
     for s in mine[:20]:
-        lines.append(f"• {s.get('user_name', 'User')} — <code>{s['user_id']}</code>")
+        topic_icon = "🔎" if s.get("topic") == "search_request" else "💬"
+        lines.append(f"• {topic_icon} {s.get('user_name', 'User')} — <code>{s['user_id']}</code>")
 
     await safe_reply(update, "\n".join(lines), parse_mode=ParseMode.HTML)
 
@@ -554,7 +622,7 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session["operator_id"] = None
     context.user_data.pop(ACTIVE_CHAT_USER_KEY, None)
 
-    await safe_send_message(context.bot, user_id, "✅ Suhbat yakunlandi.\nYana savolingiz bo‘lsa, <b>💬 Chat</b> tugmasini bosing.", parse_mode=ParseMode.HTML)
+    await safe_send_message(context.bot, user_id, "✅ Suhbat yakunlandi.\nYana savolingiz bo‘lsa, <b>💬 Chat</b> yoki <b>🔎 Bizda yo‘q mahsulotni topish</b> tugmasini bosing.", parse_mode=ParseMode.HTML)
     await safe_reply(update, f"✅ Chat yakunlandi: <code>{user_id}</code>", parse_mode=ParseMode.HTML)
 
 
@@ -650,7 +718,6 @@ async def repost_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await safe_reply(update, "Bu kanal uchun saqlangan post yo‘q.")
         return
 
-    # Oxirgi eligible postni topamiz
     item = None
     for p in reversed(posts):
         if post_is_eligible(p):
@@ -849,7 +916,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.application.user_data[real_operator_id] = {}
         context.application.user_data[real_operator_id][ACTIVE_CHAT_USER_KEY] = user_id
 
-        await safe_send_message(context.bot, user_id, "👨‍💼 Operator ulandi.\nSavolingizni yozishingiz mumkin.")
+        ready_text = "👨‍💼 Operator ulandi.\nSavolingizni yozishingiz mumkin."
+        if session.get("topic") == "search_request":
+            ready_text = "👨‍💼 Operator ulandi.\nMahsulot bo‘yicha narx va yetkazib berish muddatini yozib beradi."
+        await safe_send_message(context.bot, user_id, ready_text)
 
         new_text = build_operator_ticket_text(session, profiles.get(user_id))
         try:
@@ -877,7 +947,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if context.application.user_data[real_operator_id].get(ACTIVE_CHAT_USER_KEY) == user_id:
                 context.application.user_data[real_operator_id].pop(ACTIVE_CHAT_USER_KEY, None)
 
-        await safe_send_message(context.bot, user_id, "✅ Suhbat yakunlandi.\nYana savolingiz bo‘lsa, <b>💬 Chat</b> tugmasini bosing.", parse_mode=ParseMode.HTML)
+        await safe_send_message(context.bot, user_id, "✅ Suhbat yakunlandi.\nYana savolingiz bo‘lsa, <b>💬 Chat</b> yoki <b>🔎 Bizda yo‘q mahsulotni topish</b> tugmasini bosing.", parse_mode=ParseMode.HTML)
 
         new_text = build_operator_ticket_text(session, profiles.get(user_id))
         try:
@@ -910,6 +980,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     profiles = get_profiles(context.application)
     user_id = update.effective_user.id
+    reason = context.user_data.get(WAITING_CONTACT_REASON_KEY, "chat")
 
     profiles[user_id] = {
         "full_name": user_display_name(update.effective_user),
@@ -917,7 +988,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     context.user_data[WAITING_CONTACT_KEY] = False
-    context.user_data[CHAT_MODE_KEY] = True
+    context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
 
     sessions = get_sessions(context.application)
     current = sessions.get(user_id)
@@ -929,8 +1000,20 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "status": "waiting",
             "operator_id": None,
             "messages": [],
+            "topic": reason,
         }
+    else:
+        current["topic"] = reason
 
+    if reason == "search_request":
+        context.user_data[SEARCH_MODE_KEY] = True
+        context.user_data[CHAT_MODE_KEY] = False
+        await safe_reply(update, "✅ Telefon raqamingiz saqlandi.\nEndi mahsulot rasmi, videosi yoki nomini yuboring.", reply_markup=main_keyboard())
+        await safe_reply(update, SEARCH_INTRO_TEXT, parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
+        return
+
+    context.user_data[CHAT_MODE_KEY] = True
+    context.user_data[SEARCH_MODE_KEY] = False
     await safe_reply(update, "✅ Telefon raqamingiz saqlandi.\nEndi savolingizni yozing — operatorga yuboraman.", reply_markup=main_keyboard())
 
 
@@ -1023,34 +1106,24 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_reply(update, "⚠️ Yuborilmadi.")
         return
 
-    if not context.user_data.get(CHAT_MODE_KEY):
-        await safe_reply(update, "Avval <b>💬 Chat</b> tugmasini bosing.", parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
-        return
-
     user = update.effective_user
     user_id = user.id
-
     profiles = get_profiles(context.application)
     profile = profiles.get(user_id)
 
+    if not context.user_data.get(CHAT_MODE_KEY) and not context.user_data.get(SEARCH_MODE_KEY):
+        await safe_reply(update, "Avval <b>💬 Chat</b> yoki <b>🔎 Bizda yo‘q mahsulotni topish</b> tugmasini bosing.", parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
+        return
+
     if not profile or not profile.get("phone"):
         context.user_data[WAITING_CONTACT_KEY] = True
+        context.user_data[WAITING_CONTACT_REASON_KEY] = "search_request" if context.user_data.get(SEARCH_MODE_KEY) else "chat"
         await safe_reply(update, "Avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
         return
 
     sessions = get_sessions(context.application)
-    session = sessions.get(user_id)
-
-    if not session or session.get("status") == "closed":
-        sessions[user_id] = {
-            "user_id": user_id,
-            "user_name": profile.get("full_name") or user_display_name(user),
-            "username": user.username,
-            "status": "waiting",
-            "operator_id": None,
-            "messages": [],
-        }
-        session = sessions[user_id]
+    topic = "search_request" if context.user_data.get(SEARCH_MODE_KEY) else "chat"
+    session = ensure_user_session(sessions, user, profile, topic=topic)
 
     media_note = "📎 Media yuborildi"
     if update.message.photo:
@@ -1069,11 +1142,21 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session["messages"].append(media_note)
 
-    caption_text = (
-        "<b>💬 Userdan media keldi</b>\n"
-        f"🆔 USER_ID: <code>{user_id}</code>\n"
-        f"👤 {profile.get('full_name', user_display_name(user))}\n"
-    )
+    if session.get("topic") == "search_request":
+        caption_text = (
+            "<b>🔎 Bizda yo‘q mahsulot so‘rovi keldi</b>\n"
+            f"🆔 USER_ID: <code>{user_id}</code>\n"
+            f"👤 {profile.get('full_name', user_display_name(user))}\n"
+            "<b>Vazifa:</b> narx + yetkazib berish muddatini yozing."
+        )
+        user_ok_text = "✅ So‘rovingiz qabul qilindi.\nOperator mahsulotni ko‘rib, sizga umumiy summa va yetkazib berish vaqtini yozadi."
+    else:
+        caption_text = (
+            "<b>💬 Userdan media keldi</b>\n"
+            f"🆔 USER_ID: <code>{user_id}</code>\n"
+            f"👤 {profile.get('full_name', user_display_name(user))}\n"
+        )
+        user_ok_text = "✅ Media operatorga yuborildi.\nJavob kelishini kuting."
 
     await notify_operators_media(
         context=context,
@@ -1087,7 +1170,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         document=update.message.document.file_id if update.message.document else None,
     )
 
-    await safe_reply(update, "✅ Media operatorga yuborildi.\nJavob kelishini kuting.", reply_markup=main_keyboard())
+    await safe_reply(update, user_ok_text, reply_markup=main_keyboard())
 
 
 # ================== TEXT HANDLER ==================
@@ -1101,6 +1184,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "⬅️ Bekor qilish":
         context.user_data[WAITING_CONTACT_KEY] = False
         context.user_data[CHAT_MODE_KEY] = False
+        context.user_data[SEARCH_MODE_KEY] = False
+        context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
         await safe_reply(update, "Bekor qilindi.", reply_markup=main_keyboard())
         return
 
@@ -1116,7 +1201,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 active_user_id = mapped_user
                 context.user_data[ACTIVE_CHAT_USER_KEY] = mapped_user
 
-        if text in ("📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat", "🛍 OrzuMall.uz"):
+        if text in ("📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat", "🛍 OrzuMall.uz", "🔎 Bizda yo‘q mahsulotni topish"):
             await safe_reply(update, "Operator panelida bu tugmalar ishlatilmaydi.")
             return
 
@@ -1142,7 +1227,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 session["operator_id"] = chat_id
                 session["status"] = "assigned"
 
-            sent = await safe_send_message(context.bot, active_user_id, f"👨‍💼 Operator:\n{text}")
+            prefix = "👨‍💼 Operator"
+            if session.get("topic") == "search_request":
+                prefix = "👨‍💼 Mahsulot bo‘yicha javob"
+            sent = await safe_send_message(context.bot, active_user_id, f"{prefix}:\n{text}")
             if sent:
                 await safe_reply(update, "✅ Foydalanuvchiga yuborildi.")
             else:
@@ -1154,11 +1242,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "📞 Bog'lanish":
         context.user_data[CHAT_MODE_KEY] = False
+        context.user_data[SEARCH_MODE_KEY] = False
         await safe_reply(update, CONTACT_TEXT, parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
         return
 
     if text == "ℹ️ Ma'lumot":
         context.user_data[CHAT_MODE_KEY] = False
+        context.user_data[SEARCH_MODE_KEY] = False
         await safe_reply(update, ABOUT_TEXT, parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
         return
 
@@ -1166,36 +1256,51 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat_on(update, context)
         return
 
-    if context.user_data.get(CHAT_MODE_KEY) is True and text not in ("🛍 OrzuMall.uz", "📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat"):
-        user = update.effective_user
-        user_id = user.id if user else chat_id
+    if text == "🔎 Bizda yo‘q mahsulotni topish":
+        await search_product_on(update, context)
+        return
 
+    user = update.effective_user
+    user_id = user.id if user else chat_id
+
+    if context.user_data.get(SEARCH_MODE_KEY) is True and text not in ("🛍 OrzuMall.uz", "📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat", "🔎 Bizda yo‘q mahsulotni topish"):
         profiles = get_profiles(context.application)
         profile = profiles.get(user_id)
 
         if not profile or not profile.get("phone"):
             context.user_data[WAITING_CONTACT_KEY] = True
+            context.user_data[WAITING_CONTACT_REASON_KEY] = "search_request"
             await safe_reply(update, "Avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
             return
 
         sessions = get_sessions(context.application)
-        session = sessions.get(user_id)
+        session = ensure_user_session(sessions, user, profile, topic="search_request")
+        session["messages"].append(f"🔎 Mahsulot so‘rovi: {text}")
 
-        if not session:
-            sessions[user_id] = {
-                "user_id": user_id,
-                "user_name": profile.get("full_name") or user_display_name(user),
-                "username": user.username if user else None,
-                "status": "waiting",
-                "operator_id": None,
-                "messages": [],
-            }
-            session = sessions[user_id]
+        ticket_text = build_operator_ticket_text(session, profile)
+        await notify_operators(context, ticket_text, reply_markup=session_keyboard(user_id), user_id=user_id)
+
+        await safe_reply(update, "✅ So‘rovingiz operatorga yuborildi.\nTez orada sizga taxminiy umumiy summa va yetkazib berish muddati yoziladi.", reply_markup=main_keyboard())
+        return
+
+    if context.user_data.get(CHAT_MODE_KEY) is True and text not in ("🛍 OrzuMall.uz", "📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat", "🔎 Bizda yo‘q mahsulotni topish"):
+        profiles = get_profiles(context.application)
+        profile = profiles.get(user_id)
+
+        if not profile or not profile.get("phone"):
+            context.user_data[WAITING_CONTACT_KEY] = True
+            context.user_data[WAITING_CONTACT_REASON_KEY] = "chat"
+            await safe_reply(update, "Avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
+            return
+
+        sessions = get_sessions(context.application)
+        session = ensure_user_session(sessions, user, profile, topic="chat")
 
         if session.get("status") == "closed":
             session["status"] = "waiting"
             session["operator_id"] = None
             session["messages"] = []
+            session["topic"] = "chat"
 
         session["messages"].append(text)
 
@@ -1265,7 +1370,6 @@ def main():
 
     app.add_error_handler(on_error)
 
-    # 07:00, 09:00, 11:00, 13:00, 15:00, 17:00, 19:00, 21:00
     job_queue = app.job_queue
     times = [
         dtime(7, 0), dtime(9, 0), dtime(11, 0), dtime(13, 0),
