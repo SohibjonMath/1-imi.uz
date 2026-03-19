@@ -4,9 +4,6 @@
 import os
 import json
 import logging
-import random
-import time as time_mod
-from datetime import datetime, time as dtime
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
@@ -34,10 +31,6 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "2049065724").strip())
 OPERATORS_CSV = os.getenv("OPERATORS", "").strip()
 OPERATORS_JSON = os.getenv("OPERATORS_JSON", "").strip()
 OPERATOR_GROUP_ID_RAW = os.getenv("OPERATOR_GROUP_ID", "").strip()
-REPOST_TARGET_CHANNEL_ID_RAW = os.getenv("REPOST_TARGET_CHANNEL_ID", "").strip()
-
-# 24 soat ichida bir xil post takrorlanmasin
-REPOST_COOLDOWN_HOURS = int(os.getenv("REPOST_COOLDOWN_HOURS", "24").strip())
 
 # ================== LOGGING ==================
 logging.basicConfig(
@@ -49,16 +42,11 @@ logger = logging.getLogger("OrzuMallBot")
 # ================== KEYS ==================
 CHAT_MODE_KEY = "chat_mode"
 SEARCH_MODE_KEY = "search_mode"
-WAITING_CONTACT_KEY = "waiting_contact"
-WAITING_CONTACT_REASON_KEY = "waiting_contact_reason"
 ACTIVE_CHAT_USER_KEY = "active_chat_user_id"
 
 SESSIONS_KEY = "sessions"
 USER_PROFILES_KEY = "user_profiles"
 NOTIF_MAP_KEY = "notif_map"
-
-CHANNEL_POSTS_KEY = "channel_posts"
-REPOST_INDEX_KEY = "repost_index"
 
 
 def parse_operators() -> list[int]:
@@ -87,7 +75,6 @@ def parse_operators() -> list[int]:
 
 OPERATORS = parse_operators()
 OPERATOR_GROUP_ID = int(OPERATOR_GROUP_ID_RAW) if OPERATOR_GROUP_ID_RAW else None
-REPOST_TARGET_CHANNEL_ID = int(REPOST_TARGET_CHANNEL_ID_RAW) if REPOST_TARGET_CHANNEL_ID_RAW else None
 
 
 def is_operator(chat_id: int) -> bool:
@@ -106,6 +93,7 @@ def get_sessions(app) -> dict:
     return app.bot_data[SESSIONS_KEY]
 
 
+# Profil saqlash hozircha ixtiyoriy: telefon so'ralmaydi, keyin kerak bo'lsa ism va boshqa maydonlar qo'shiladi
 def get_profiles(app) -> dict:
     if USER_PROFILES_KEY not in app.bot_data:
         app.bot_data[USER_PROFILES_KEY] = {}
@@ -116,18 +104,6 @@ def get_notif_map(app) -> dict:
     if NOTIF_MAP_KEY not in app.bot_data:
         app.bot_data[NOTIF_MAP_KEY] = {}
     return app.bot_data[NOTIF_MAP_KEY]
-
-
-def get_channel_posts(app) -> dict:
-    if CHANNEL_POSTS_KEY not in app.bot_data:
-        app.bot_data[CHANNEL_POSTS_KEY] = {}
-    return app.bot_data[CHANNEL_POSTS_KEY]
-
-
-def get_repost_index(app) -> dict:
-    if REPOST_INDEX_KEY not in app.bot_data:
-        app.bot_data[REPOST_INDEX_KEY] = {}
-    return app.bot_data[REPOST_INDEX_KEY]
 
 
 # ================== UI ==================
@@ -143,19 +119,6 @@ def main_keyboard() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         is_persistent=True,
         input_field_placeholder="Tugmalardan tanlang…",
-    )
-
-
-def contact_keyboard() -> ReplyKeyboardMarkup:
-    kb = [
-        [KeyboardButton("📱 Telefon raqamni yuborish", request_contact=True)],
-        [KeyboardButton("⬅️ Bekor qilish")],
-    ]
-    return ReplyKeyboardMarkup(
-        keyboard=kb,
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        input_field_placeholder="Telefon raqamingizni yuboring",
     )
 
 
@@ -180,7 +143,6 @@ ABOUT_TEXT = (
 CONTACT_TEXT = (
     "<b>📞 Bog'lanish</b>\n"
     "Bot: @OrzuMallUZ_bot\n"
-    "Telefon: +998 XX XXX XX XX\n"
     "Ish vaqti: 09:00–21:00"
 )
 
@@ -208,12 +170,6 @@ def user_display_name(user) -> str:
         return "User"
     name = " ".join(filter(None, [getattr(user, "first_name", None), getattr(user, "last_name", None)])).strip()
     return name or getattr(user, "full_name", None) or "User"
-
-
-def profile_text(profile: dict) -> str:
-    name = profile.get("full_name", "Noma'lum")
-    phone = profile.get("phone", "Kiritilmagan")
-    return f"👤 Ism: {name}\n📱 Telefon: <code>{phone}</code>"
 
 
 def session_status_text(session: dict) -> str:
@@ -251,9 +207,6 @@ def build_operator_ticket_text(session: dict, profile: dict | None = None) -> st
         f"🆔 USER_ID: <code>{user_id}</code>",
     ]
 
-    if profile:
-        body.append(f"📱 Telefon: <code>{profile.get('phone', 'Kiritilmagan')}</code>")
-
     body += [status_line, "", "<b>Oxirgi xabarlar:</b>"]
 
     if last_messages:
@@ -270,89 +223,14 @@ def build_operator_ticket_text(session: dict, profile: dict | None = None) -> st
     return "\n".join(body)
 
 
-def detect_message_kind(msg) -> str:
-    if msg.photo:
-        return "photo"
-    if msg.video:
-        return "video"
-    if msg.animation:
-        return "animation"
-    if msg.document:
-        return "document"
-    if msg.audio:
-        return "audio"
-    if msg.voice:
-        return "voice"
-    if msg.text:
-        return "text"
-    return "other"
-
-
-def format_dt(dt) -> str:
-    try:
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return str(dt)
-
-
-def resolve_channel_id(app, explicit_channel_id: int | None = None) -> int | None:
-    if explicit_channel_id:
-        return explicit_channel_id
-    if REPOST_TARGET_CHANNEL_ID:
-        return REPOST_TARGET_CHANNEL_ID
-
-    channel_posts = get_channel_posts(app)
-    channel_ids = list(channel_posts.keys())
-    if len(channel_ids) == 1:
-        return channel_ids[0]
-    return None
-
-
-def post_is_eligible(post: dict, cooldown_hours: int = REPOST_COOLDOWN_HOURS) -> bool:
-    last_ts = post.get("last_reposted_at_ts")
-    if not last_ts:
-        return True
-    return (time_mod.time() - float(last_ts)) >= (cooldown_hours * 3600)
-
-
-def eligible_posts(posts: list[dict], cooldown_hours: int = REPOST_COOLDOWN_HOURS) -> list[dict]:
-    return [p for p in posts if post_is_eligible(p, cooldown_hours)]
-
-
-def select_random_post(posts: list[dict], cooldown_hours: int = REPOST_COOLDOWN_HOURS) -> dict | None:
-    candidates = eligible_posts(posts, cooldown_hours)
-    if not candidates:
-        return None
-    return random.choice(candidates)
-
-
-def select_smart_post(posts: list[dict], cooldown_hours: int = REPOST_COOLDOWN_HOURS) -> dict | None:
-    candidates = eligible_posts(posts, cooldown_hours)
-    if not candidates:
-        return None
-
-    min_count = min(int(p.get("repost_count", 0)) for p in candidates)
-    same_count = [p for p in candidates if int(p.get("repost_count", 0)) == min_count]
-
-    same_count.sort(key=lambda p: (float(p.get("captured_at_ts", 0.0)), int(p.get("message_id", 0))))
-    top_bucket = same_count[:5] if len(same_count) > 5 else same_count
-    return random.choice(top_bucket)
-
-
-def mark_reposted(post: dict):
-    post["repost_count"] = int(post.get("repost_count", 0)) + 1
-    post["last_reposted_at_ts"] = time_mod.time()
-    post["last_reposted_at"] = format_dt(datetime.now())
-
-
-def ensure_user_session(sessions: dict, user, profile: dict, topic: str = "chat") -> dict:
+def ensure_user_session(sessions: dict, user, profile: dict | None = None, topic: str = "chat") -> dict:
     user_id = user.id
     session = sessions.get(user_id)
 
     if not session or session.get("status") == "closed":
         sessions[user_id] = {
             "user_id": user_id,
-            "user_name": profile.get("full_name") or user_display_name(user),
+            "user_name": (profile or {}).get("full_name") or user_display_name(user),
             "username": user.username,
             "status": "waiting",
             "operator_id": None,
@@ -441,7 +319,6 @@ async def notify_operators_media(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     caption_text: str,
-    profile: dict | None = None,
     photo=None,
     video=None,
     audio=None,
@@ -450,8 +327,6 @@ async def notify_operators_media(
 ):
     reply_markup = session_keyboard(user_id)
     full_caption = caption_text
-    if profile:
-        full_caption += "\n" + profile_text(profile)
 
     notif_map = get_notif_map(context.application)
 
@@ -490,8 +365,6 @@ async def notify_operators_media(
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data[CHAT_MODE_KEY] = False
     context.user_data[SEARCH_MODE_KEY] = False
-    context.user_data[WAITING_CONTACT_KEY] = False
-    context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
     await safe_reply(update, WELCOME_TEXT, reply_markup=main_keyboard())
 
 
@@ -505,15 +378,9 @@ async def chat_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     profiles = get_profiles(context.application)
-    profile = profiles.get(user_id)
+    profile = profiles.get(user_id) or {"full_name": user_display_name(update.effective_user)}
 
     context.user_data[SEARCH_MODE_KEY] = False
-
-    if not profile or not profile.get("phone"):
-        context.user_data[WAITING_CONTACT_KEY] = True
-        context.user_data[WAITING_CONTACT_REASON_KEY] = "chat"
-        await safe_reply(update, "💬 Operator bilan bog‘lanish uchun avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
-        return
 
     sessions = get_sessions(context.application)
     session = ensure_user_session(sessions, update.effective_user, profile, topic="chat")
@@ -522,7 +389,6 @@ async def chat_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["topic"] = "chat"
         context.user_data[CHAT_MODE_KEY] = True
         await safe_reply(update, "💬 Chat rejimi yoqildi.\nSavolingizni yozing, operatorga yuboraman.", reply_markup=main_keyboard())
-        return
 
 
 async def search_product_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -531,15 +397,9 @@ async def search_product_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     profiles = get_profiles(context.application)
-    profile = profiles.get(user_id)
+    profile = profiles.get(user_id) or {"full_name": user_display_name(update.effective_user)}
 
     context.user_data[CHAT_MODE_KEY] = False
-
-    if not profile or not profile.get("phone"):
-        context.user_data[WAITING_CONTACT_KEY] = True
-        context.user_data[WAITING_CONTACT_REASON_KEY] = "search_request"
-        await safe_reply(update, "🔎 Mahsulotni topish so‘rovi uchun avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
-        return
 
     sessions = get_sessions(context.application)
     session = ensure_user_session(sessions, update.effective_user, profile, topic="search_request")
@@ -555,8 +415,6 @@ async def search_product_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def chat_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data[CHAT_MODE_KEY] = False
     context.user_data[SEARCH_MODE_KEY] = False
-    context.user_data[WAITING_CONTACT_KEY] = False
-    context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
     await safe_reply(update, "✅ Chat rejimi o‘chirildi.", reply_markup=main_keyboard())
 
 
@@ -624,246 +482,6 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await safe_send_message(context.bot, user_id, "✅ Suhbat yakunlandi.\nYana savolingiz bo‘lsa, <b>💬 Chat</b> yoki <b>🔎 Bizda yo‘q mahsulotni topish</b> tugmasini bosing.", parse_mode=ParseMode.HTML)
     await safe_reply(update, f"✅ Chat yakunlandi: <code>{user_id}</code>", parse_mode=ParseMode.HTML)
-
-
-# ================== REPOST CORE ==================
-async def do_repost(context: ContextTypes.DEFAULT_TYPE, channel_id: int, mode: str = "smart") -> tuple[bool, str]:
-    channel_posts = get_channel_posts(context.application)
-    posts = channel_posts.get(channel_id, [])
-    if not posts:
-        return False, "Bu kanal uchun saqlangan post yo‘q."
-
-    item = select_smart_post(posts) if mode == "smart" else select_random_post(posts)
-    if not item:
-        return False, f"Mos post topilmadi. Sabab: oxirgi {REPOST_COOLDOWN_HOURS} soat ichida barcha postlar allaqachon ishlatilgan."
-
-    try:
-        await context.bot.copy_message(
-            chat_id=channel_id,
-            from_chat_id=item["source_chat_id"],
-            message_id=item["message_id"],
-        )
-        mark_reposted(item)
-        return True, (
-            f"✅ Repost qilindi.\n"
-            f"Kanal: <code>{channel_id}</code>\n"
-            f"Post ID: <code>{item['message_id']}</code>\n"
-            f"Repost count: <b>{item['repost_count']}</b>"
-        )
-    except Exception as e:
-        logger.exception("Repost xato: %s", e)
-        return False, f"⚠️ Repost bo‘lmadi: {e}"
-
-
-# ================== CHANNEL COMMANDS ==================
-async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    channel_posts = get_channel_posts(context.application)
-    if not channel_posts:
-        await safe_reply(update, "Hozircha birorta kanal posti saqlanmagan.\nBotni kanalga admin qiling va yangi post tashlang.")
-        return
-
-    lines = ["<b>📢 Saqlangan kanallar:</b>"]
-    for channel_id, posts in channel_posts.items():
-        last_msg_id = posts[-1]["message_id"] if posts else "-"
-        lines.append(f"• <code>{channel_id}</code> — {len(posts)} ta post (oxirgi ID: {last_msg_id})")
-
-    await safe_reply(update, "\n".join(lines), parse_mode=ParseMode.HTML)
-
-
-async def repost_count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    explicit_channel_id = None
-    if context.args:
-        try:
-            explicit_channel_id = int(context.args[0])
-        except ValueError:
-            await safe_reply(update, "Channel ID noto‘g‘ri. Misol: <code>/repost_count -1001234567890</code>", parse_mode=ParseMode.HTML)
-            return
-
-    channel_id = resolve_channel_id(context.application, explicit_channel_id)
-    if not channel_id:
-        await safe_reply(update, "Kanal aniqlanmadi. /channels ni ko‘ring yoki REPOST_TARGET_CHANNEL_ID qo‘ying.")
-        return
-
-    channel_posts = get_channel_posts(context.application)
-    posts = channel_posts.get(channel_id, [])
-    eligible = eligible_posts(posts)
-    await safe_reply(update, f"Kanal <code>{channel_id}</code> uchun saqlangan postlar soni: <b>{len(posts)}</b>\nHozir repostga tayyor: <b>{len(eligible)}</b>", parse_mode=ParseMode.HTML)
-
-
-async def repost_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    explicit_channel_id = None
-    if context.args:
-        try:
-            explicit_channel_id = int(context.args[0])
-        except ValueError:
-            await safe_reply(update, "Channel ID noto‘g‘ri. Misol: <code>/repost_last -1001234567890</code>", parse_mode=ParseMode.HTML)
-            return
-
-    channel_id = resolve_channel_id(context.application, explicit_channel_id)
-    if not channel_id:
-        await safe_reply(update, "Kanal aniqlanmadi. /channels ni ko‘ring yoki REPOST_TARGET_CHANNEL_ID qo‘ying.")
-        return
-
-    posts = get_channel_posts(context.application).get(channel_id, [])
-    if not posts:
-        await safe_reply(update, "Bu kanal uchun saqlangan post yo‘q.")
-        return
-
-    item = None
-    for p in reversed(posts):
-        if post_is_eligible(p):
-            item = p
-            break
-
-    if not item:
-        await safe_reply(update, f"Oxirgi {REPOST_COOLDOWN_HOURS} soat ichida barcha postlar ishlatilgan.")
-        return
-
-    try:
-        await context.bot.copy_message(chat_id=channel_id, from_chat_id=item["source_chat_id"], message_id=item["message_id"])
-        mark_reposted(item)
-        await safe_reply(update, f"✅ Oxirgi mos post qayta tashlandi.\nKanal: <code>{channel_id}</code>\nPost ID: <code>{item['message_id']}</code>", parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logger.exception("repost_last xato: %s", e)
-        await safe_reply(update, f"⚠️ Repost bo‘lmadi: {e}")
-
-
-async def repost_random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    explicit_channel_id = None
-    if context.args:
-        try:
-            explicit_channel_id = int(context.args[0])
-        except ValueError:
-            await safe_reply(update, "Channel ID noto‘g‘ri. Misol: <code>/repost_random -1001234567890</code>", parse_mode=ParseMode.HTML)
-            return
-
-    channel_id = resolve_channel_id(context.application, explicit_channel_id)
-    if not channel_id:
-        await safe_reply(update, "Kanal aniqlanmadi. /channels ni ko‘ring yoki REPOST_TARGET_CHANNEL_ID qo‘ying.")
-        return
-
-    ok, msg = await do_repost(context, channel_id, mode="random")
-    await safe_reply(update, msg, parse_mode=ParseMode.HTML)
-
-
-async def repost_smart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    explicit_channel_id = None
-    if context.args:
-        try:
-            explicit_channel_id = int(context.args[0])
-        except ValueError:
-            await safe_reply(update, "Channel ID noto‘g‘ri. Misol: <code>/repost_smart -1001234567890</code>", parse_mode=ParseMode.HTML)
-            return
-
-    channel_id = resolve_channel_id(context.application, explicit_channel_id)
-    if not channel_id:
-        await safe_reply(update, "Kanal aniqlanmadi. /channels ni ko‘ring yoki REPOST_TARGET_CHANNEL_ID qo‘ying.")
-        return
-
-    ok, msg = await do_repost(context, channel_id, mode="smart")
-    await safe_reply(update, msg, parse_mode=ParseMode.HTML)
-
-
-async def repost_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    explicit_channel_id = None
-    if context.args:
-        try:
-            explicit_channel_id = int(context.args[0])
-        except ValueError:
-            await safe_reply(update, "Channel ID noto‘g‘ri. Misol: <code>/repost_next -1001234567890</code>", parse_mode=ParseMode.HTML)
-            return
-
-    channel_id = resolve_channel_id(context.application, explicit_channel_id)
-    if not channel_id:
-        await safe_reply(update, "Kanal aniqlanmadi. /channels ni ko‘ring yoki REPOST_TARGET_CHANNEL_ID qo‘ying.")
-        return
-
-    channel_posts = get_channel_posts(context.application)
-    posts = channel_posts.get(channel_id, [])
-    if not posts:
-        await safe_reply(update, "Bu kanal uchun saqlangan post yo‘q.")
-        return
-
-    repost_index = get_repost_index(context.application)
-    start_idx = repost_index.get(channel_id, 0)
-    found = None
-    found_idx = None
-
-    for shift in range(len(posts)):
-        idx = (start_idx + shift) % len(posts)
-        if post_is_eligible(posts[idx]):
-            found = posts[idx]
-            found_idx = idx
-            break
-
-    if found is None:
-        await safe_reply(update, f"Hozir repost qilib bo‘lmaydi: barcha postlar oxirgi {REPOST_COOLDOWN_HOURS} soat ichida ishlatilgan.")
-        return
-
-    try:
-        await context.bot.copy_message(chat_id=channel_id, from_chat_id=found["source_chat_id"], message_id=found["message_id"])
-        mark_reposted(found)
-        repost_index[channel_id] = (found_idx + 1) % len(posts)
-        await safe_reply(update, f"✅ Navbatdagi mos post qayta tashlandi.\nKanal: <code>{channel_id}</code>\nPost ID: <code>{found['message_id']}</code>", parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logger.exception("repost_next xato: %s", e)
-        await safe_reply(update, f"⚠️ Repost bo‘lmadi: {e}")
-
-
-async def repost_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_or_operator(update):
-        return
-
-    explicit_channel_id = None
-    if context.args:
-        try:
-            explicit_channel_id = int(context.args[0])
-        except ValueError:
-            await safe_reply(update, "Channel ID noto‘g‘ri.")
-            return
-
-    channel_id = resolve_channel_id(context.application, explicit_channel_id)
-    if not channel_id:
-        await safe_reply(update, "Kanal aniqlanmadi.")
-        return
-
-    posts = get_channel_posts(context.application).get(channel_id, [])
-    if not posts:
-        await safe_reply(update, "Bu kanal uchun saqlangan post yo‘q.")
-        return
-
-    eligible = len(eligible_posts(posts))
-    used = sum(1 for p in posts if int(p.get("repost_count", 0)) > 0)
-    max_count = max(int(p.get("repost_count", 0)) for p in posts)
-
-    lines = [
-        f"<b>📊 Repost statistika</b>",
-        f"Kanal: <code>{channel_id}</code>",
-        f"Jami post: <b>{len(posts)}</b>",
-        f"Hozir available: <b>{eligible}</b>",
-        f"Kamida 1 marta ishlatilgan: <b>{used}</b>",
-        f"Eng ko‘p repost soni: <b>{max_count}</b>",
-        f"Cooldown: <b>{REPOST_COOLDOWN_HOURS} soat</b>",
-    ]
-    await safe_reply(update, "\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 # ================== CALLBACKS ==================
@@ -961,94 +579,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
 
-# ================== CONTACT HANDLER ==================
-async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.effective_user:
-        return
-
-    if not context.user_data.get(WAITING_CONTACT_KEY):
-        await safe_reply(update, "Asosiy menyudan foydalaning 👇", reply_markup=main_keyboard())
-        return
-
-    contact = update.message.contact
-    if not contact:
-        return
-
-    if contact.user_id and contact.user_id != update.effective_user.id:
-        await safe_reply(update, "Iltimos, aynan o‘zingizning telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
-        return
-
-    profiles = get_profiles(context.application)
-    user_id = update.effective_user.id
-    reason = context.user_data.get(WAITING_CONTACT_REASON_KEY, "chat")
-
-    profiles[user_id] = {
-        "full_name": user_display_name(update.effective_user),
-        "phone": contact.phone_number,
-    }
-
-    context.user_data[WAITING_CONTACT_KEY] = False
-    context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
-
-    sessions = get_sessions(context.application)
-    current = sessions.get(user_id)
-    if not current or current.get("status") == "closed":
-        sessions[user_id] = {
-            "user_id": user_id,
-            "user_name": profiles[user_id]["full_name"],
-            "username": update.effective_user.username,
-            "status": "waiting",
-            "operator_id": None,
-            "messages": [],
-            "topic": reason,
-        }
-    else:
-        current["topic"] = reason
-
-    if reason == "search_request":
-        context.user_data[SEARCH_MODE_KEY] = True
-        context.user_data[CHAT_MODE_KEY] = False
-        await safe_reply(update, "✅ Telefon raqamingiz saqlandi.\nEndi mahsulot rasmi, videosi yoki nomini yuboring.", reply_markup=main_keyboard())
-        await safe_reply(update, SEARCH_INTRO_TEXT, parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
-        return
-
-    context.user_data[CHAT_MODE_KEY] = True
-    context.user_data[SEARCH_MODE_KEY] = False
-    await safe_reply(update, "✅ Telefon raqamingiz saqlandi.\nEndi savolingizni yozing — operatorga yuboraman.", reply_markup=main_keyboard())
-
-
-# ================== CHANNEL POST HANDLER ==================
-async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.channel_post
-    if not msg or not msg.chat:
-        return
-
-    channel_id = msg.chat.id
-    channel_title = msg.chat.title or "Channel"
-
-    channel_posts = get_channel_posts(context.application)
-    if channel_id not in channel_posts:
-        channel_posts[channel_id] = []
-
-    post_info = {
-        "source_chat_id": channel_id,
-        "message_id": msg.message_id,
-        "channel_title": channel_title,
-        "date": format_dt(msg.date),
-        "kind": detect_message_kind(msg),
-        "caption": (msg.caption or msg.text or "")[:500],
-        "captured_at_ts": time_mod.time(),
-        "repost_count": 0,
-        "last_reposted_at_ts": None,
-        "last_reposted_at": None,
-    }
-
-    existing_ids = {x["message_id"] for x in channel_posts[channel_id]}
-    if msg.message_id not in existing_ids:
-        channel_posts[channel_id].append(post_info)
-        logger.info("Kanal posti saqlandi | channel=%s (%s) | message_id=%s | kind=%s | total=%s", channel_title, channel_id, msg.message_id, post_info["kind"], len(channel_posts[channel_id]))
-
-
 # ================== MEDIA HANDLER ==================
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat or not update.effective_user:
@@ -1109,16 +639,10 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     profiles = get_profiles(context.application)
-    profile = profiles.get(user_id)
+    profile = profiles.get(user_id) or {"full_name": user_display_name(user)}
 
     if not context.user_data.get(CHAT_MODE_KEY) and not context.user_data.get(SEARCH_MODE_KEY):
         await safe_reply(update, "Avval <b>💬 Chat</b> yoki <b>🔎 Bizda yo‘q mahsulotni topish</b> tugmasini bosing.", parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
-        return
-
-    if not profile or not profile.get("phone"):
-        context.user_data[WAITING_CONTACT_KEY] = True
-        context.user_data[WAITING_CONTACT_REASON_KEY] = "search_request" if context.user_data.get(SEARCH_MODE_KEY) else "chat"
-        await safe_reply(update, "Avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
         return
 
     sessions = get_sessions(context.application)
@@ -1146,7 +670,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption_text = (
             "<b>🔎 Bizda yo‘q mahsulot so‘rovi keldi</b>\n"
             f"🆔 USER_ID: <code>{user_id}</code>\n"
-            f"👤 {profile.get('full_name', user_display_name(user))}\n"
+            f"👤 {user_display_name(user)}\n"
             "<b>Vazifa:</b> narx + yetkazib berish muddatini yozing."
         )
         user_ok_text = "✅ So‘rovingiz qabul qilindi.\nOperator mahsulotni ko‘rib, sizga umumiy summa va yetkazib berish vaqtini yozadi."
@@ -1154,7 +678,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption_text = (
             "<b>💬 Userdan media keldi</b>\n"
             f"🆔 USER_ID: <code>{user_id}</code>\n"
-            f"👤 {profile.get('full_name', user_display_name(user))}\n"
+            f"👤 {user_display_name(user)}\n"
         )
         user_ok_text = "✅ Media operatorga yuborildi.\nJavob kelishini kuting."
 
@@ -1162,7 +686,6 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context=context,
         user_id=user_id,
         caption_text=caption_text,
-        profile=profile,
         photo=update.message.photo[-1].file_id if update.message.photo else None,
         video=update.message.video.file_id if update.message.video else None,
         audio=update.message.audio.file_id if update.message.audio else None,
@@ -1182,10 +705,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if text == "⬅️ Bekor qilish":
-        context.user_data[WAITING_CONTACT_KEY] = False
         context.user_data[CHAT_MODE_KEY] = False
         context.user_data[SEARCH_MODE_KEY] = False
-        context.user_data.pop(WAITING_CONTACT_REASON_KEY, None)
         await safe_reply(update, "Bekor qilindi.", reply_markup=main_keyboard())
         return
 
@@ -1265,13 +786,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data.get(SEARCH_MODE_KEY) is True and text not in ("🛍 OrzuMall.uz", "📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat", "🔎 Bizda yo‘q mahsulotni topish"):
         profiles = get_profiles(context.application)
-        profile = profiles.get(user_id)
-
-        if not profile or not profile.get("phone"):
-            context.user_data[WAITING_CONTACT_KEY] = True
-            context.user_data[WAITING_CONTACT_REASON_KEY] = "search_request"
-            await safe_reply(update, "Avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
-            return
+        profile = profiles.get(user_id) or {"full_name": user_display_name(user)}
 
         sessions = get_sessions(context.application)
         session = ensure_user_session(sessions, user, profile, topic="search_request")
@@ -1285,13 +800,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data.get(CHAT_MODE_KEY) is True and text not in ("🛍 OrzuMall.uz", "📞 Bog'lanish", "ℹ️ Ma'lumot", "💬 Chat", "🔎 Bizda yo‘q mahsulotni topish"):
         profiles = get_profiles(context.application)
-        profile = profiles.get(user_id)
-
-        if not profile or not profile.get("phone"):
-            context.user_data[WAITING_CONTACT_KEY] = True
-            context.user_data[WAITING_CONTACT_REASON_KEY] = "chat"
-            await safe_reply(update, "Avval telefon raqamingizni yuboring.", reply_markup=contact_keyboard())
-            return
+        profile = profiles.get(user_id) or {"full_name": user_display_name(user)}
 
         sessions = get_sessions(context.application)
         session = ensure_user_session(sessions, user, profile, topic="chat")
@@ -1313,54 +822,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_reply(update, "Tugmalardan foydalaning 👇", reply_markup=main_keyboard())
 
 
-# ================== AUTO REPOST ==================
-async def auto_repost(context: ContextTypes.DEFAULT_TYPE):
-    channel_id = resolve_channel_id(context.application)
-    if not channel_id:
-        logger.warning("Auto repost: kanal aniqlanmadi")
-        return
-
-    ok, msg = await do_repost(context, channel_id, mode="smart")
-    if ok:
-        logger.info("AUTO REPOST OK | %s", msg.replace("\n", " | "))
-    else:
-        logger.warning("AUTO REPOST SKIP | %s", msg)
-
-
 # ================== ERROR HANDLER ==================
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception("Global error handler: %s", context.error)
-
-
-# ================== JOB QUEUE SETUP ==================
-def schedule_auto_reposts(app: Application):
-    times = [
-        dtime(7, 0), dtime(9, 0), dtime(11, 0), dtime(13, 0),
-        dtime(15, 0), dtime(17, 0), dtime(19, 0), dtime(21, 0),
-    ]
-
-    job_queue = getattr(app, "job_queue", None)
-    if job_queue is None:
-        logger.warning(
-            "⚠️ JobQueue topilmadi. Auto repost o‘chiq holatda davom etadi. "
-            "requirements.txt ga python-telegram-bot[job-queue] qo‘shing."
-        )
-        return False
-
-    added = 0
-    for t in times:
-        try:
-            job_queue.run_daily(
-                auto_repost,
-                time=t,
-                name=f"auto_repost_{t.hour:02d}_{t.minute:02d}",
-            )
-            added += 1
-        except Exception as e:
-            logger.exception("run_daily xato | %s:%s | %s", t.hour, t.minute, e)
-
-    logger.info("Auto repost schedule qo‘shildi: %s ta vaqt", added)
-    return added > 0
 
 
 # ================== MAIN ==================
@@ -1372,8 +836,6 @@ def main():
 
     logger.info("Operators: %s", OPERATORS)
     logger.info("Operator group: %s", OPERATOR_GROUP_ID)
-    logger.info("Repost target channel: %s", REPOST_TARGET_CHANNEL_ID)
-    logger.info("Repost cooldown: %s hours", REPOST_COOLDOWN_HOURS)
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -1385,27 +847,11 @@ def main():
     app.add_handler(CommandHandler("my", my_command))
     app.add_handler(CommandHandler("done", done_command))
 
-    app.add_handler(CommandHandler("channels", channels_command))
-    app.add_handler(CommandHandler("repost_count", repost_count_command))
-    app.add_handler(CommandHandler("repost_last", repost_last_command))
-    app.add_handler(CommandHandler("repost_random", repost_random_command))
-    app.add_handler(CommandHandler("repost_smart", repost_smart_command))
-    app.add_handler(CommandHandler("repost_next", repost_next_command))
-    app.add_handler(CommandHandler("repost_stats", repost_stats_command))
-
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
-    app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, handle_channel_post))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL, handle_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     app.add_error_handler(on_error)
-
-    auto_repost_enabled = schedule_auto_reposts(app)
-    if auto_repost_enabled:
-        logger.info("✅ Auto repost yoqildi")
-    else:
-        logger.info("ℹ️ Bot ishlaydi, lekin auto repost hozircha o‘chiq")
 
     logger.info("✅ OrzuMall bot ishga tushdi. CTRL+C bilan to'xtatasiz.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
